@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="google-site-verification" content="tNEd3FhnVUmPaUSrEzr6kOd43890ICwpCOcHy1fZMN8" />
+<title>無限∞DASHゲーム スキンかわいい</title>
+<style>
+
+  body { margin:0; background:#111; overflow:hidden; font-family:sans-serif; color:white; }
+  canvas { display:block; margin:0 auto; background:#222; }
+  #ui { position:absolute; top:10px; left:50%; transform:translateX(-50%); text-align:center; }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas" width="800" height="400"></canvas>
+<div id="ui"></div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const ui = document.getElementById("ui");
+
+let gameState = "start";
+const player = { x:100, y:300, w:40, h:40, vy:0, jumpPower:-12, rotation:0, onGround:false };
+let gravity = 0.7;
+let speed = 4;
+let score = 0;
+let highScore = localStorage.getItem("dashHighScore") || 0;
+let lastScoreX = 0;
+
+let platforms = [{x:0, y:350, w:800, h:50}];
+let obstacles = [];
+let items = [];
+let lastObstacleX = 0;
+
+let keys = {};
+document.addEventListener("keydown", e => {
+    keys[e.code] = true;
+    if((gameState==="start"||gameState==="over") && e.code==="Enter") startGame();
+    if(gameState==="play" && e.code==="Space") jump();
+});
+document.addEventListener("keyup", e => keys[e.code] = false);
+
+function startGame(){
+    gameState="play";
+    player.y=300; player.vy=0; player.rotation=0;
+    platforms=[{x:0,y:350,w:800,h:50}];
+    obstacles=[]; items=[]; score=0; lastScoreX=0; speed=5; lastObstacleX=0;
+}
+
+function jump(){ if(player.onGround){ player.vy=player.jumpPower; player.onGround=false; player.rotation+=Math.PI/2; } }
+
+// 障害物生成（足場生成時に呼ぶ）
+function generateObstacle(plat) {
+    if (!plat) return; // 安全策
+
+    const chance = 0.2; // 出現率70%
+    if (Math.random() > chance) return;
+
+    // トゲの幅（10〜15px）
+    const w = Math.min(7 + Math.random() * 5, plat.w / 2);
+
+    // 足場端を避けて配置
+    const x = plat.x + 30 + Math.random() * (plat.w - w - 60);
+
+    // トゲ生成
+    obstacles.push({ x: x, y: plat.y - 20, w: w, h: 20 });
+
+    // 足場を左右均等に伸ばす（毎回必ず）
+    const extendSize = 100; // 伸ばす幅
+    plat.x -= extendSize / 2;
+    plat.w += extendSize;
+}
+
+
+// 足場生成（ジャンプで届く安全な範囲 + トゲ生成）
+function generatePlatform() {
+    const last = platforms[platforms.length - 1];
+
+    // ★ 対策1：横方向のgapをジャンプで届く範囲に制限 ★
+    const minGap = 50;
+    const maxGap = 100;
+    const gap = minGap + Math.random() * (maxGap - minGap);
+
+    const w = 100 + Math.random() * 50;
+
+    // ★ 対策2：高さ差をジャンプで届く範囲に制限 ★
+    const maxStep = 40; // ジャンプ1回で届く縦の範囲
+    let y = last.y + (Math.random() * (2 * maxStep) - maxStep);
+    y = Math.max(150, Math.min(350, y)); // canvas内に収める
+
+    // 新しい足場を追加
+    const newPlat = { x: last.x + last.w + gap, y: y, w: w, h: 20 };
+    platforms.push(newPlat);
+
+    // 足場生成時にトゲ生成
+    generateObstacle(newPlat);
+}
+
+
+// アイテム生成
+function generateItem(){
+    const plat = platforms[Math.floor(Math.random()*platforms.length)];
+    items.push({x:plat.x + Math.random()*(plat.w-20), y:plat.y-20, w:20, h:20});
+}
+
+function isColliding(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
+
+function update(){
+    if(gameState!=="play") return;
+    player.vy += gravity; player.y += player.vy;
+
+    player.onGround=false;
+    platforms.forEach(p=>{ if(player.vy>=0 && isColliding(player,{x:p.x,y:p.y,w:p.w,h:p.h})){ player.y=p.y-player.h; player.vy=0; player.onGround=true; } });
+
+    platforms.forEach(p=>p.x-=speed);
+    obstacles.forEach(o=>o.x-=speed);
+    items.forEach(i=>i.x-=speed);
+
+    platforms=platforms.filter(p=>p.x+p.w>0);
+    obstacles=obstacles.filter(o=>o.x+o.w>0);
+    items=items.filter(i=>i.x+i.w>0);
+
+    if(platforms[platforms.length-1].x+platforms[platforms.length-1].w<canvas.width){
+        generatePlatform();
+        generateObstacle();
+        if(Math.random()<0.3) generateItem();
+    }
+
+    obstacles.forEach(o=>{ if(isColliding(player,o)) gameOver(); });
+    items = items.filter(i=>{ if(isColliding(player,i)){score+=5; return false;} return true; });
+
+    lastScoreX += speed;
+    if(lastScoreX >= 60){ score++; lastScoreX=0; }
+
+    if(player.y>canvas.height) gameOver();
+}
+
+function gameOver(){ gameState="over"; if(score>highScore){ highScore=score; localStorage.setItem("dashHighScore",highScore); } }
+
+function drawPlayer() {
+    const cx = player.x + player.w / 2;
+    const cy = player.y + player.h / 2;
+    const r = player.w / 2;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(player.rotation);
+
+    // 本体（丸・オレンジ）
+    ctx.fillStyle = "#e07b39";
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 耳（外側 白）
+    ctx.fillStyle = "white";
+    ctx.beginPath();
+    ctx.arc(-r/1.5, -r/1.5, r/3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(r/1.5, -r/1.5, r/3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 耳（内側 オレンジ）
+    ctx.fillStyle = "#e07b39";
+    ctx.beginPath();
+    ctx.arc(-r/1.5, -r/1.5, r/4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(r/1.5, -r/1.5, r/4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 目
+    ctx.fillStyle = "black";
+    ctx.beginPath();
+    ctx.arc(-r/3, 0, r/6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(r/3, 0, r/6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 鼻
+    ctx.beginPath();
+    ctx.arc(0, r/6, r/8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 口
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, r/4, r/6, 0, Math.PI);
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+
+function draw(){
+    // 背景色（ゆっくり変化）
+    let bgHue = (score * 0.7) % 360; 
+    ctx.fillStyle = `hsl(${bgHue}, 50%, 20%)`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 足場色（背景より少し先行）
+    let groundHue = (score * 0.7 + 10) % 360;
+    ctx.fillStyle = `hsl(${groundHue}, 50%, 50%)`;
+    platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, p.h));
+
+    // 障害物
+    ctx.fillStyle="red"; obstacles.forEach(o=>{
+        ctx.beginPath(); ctx.moveTo(o.x,o.y+o.h); ctx.lineTo(o.x+o.w/2,o.y); ctx.lineTo(o.x+o.w,o.y+o.h); ctx.closePath(); ctx.fill();
+    });
+
+    // アイテム
+    ctx.fillStyle="gold"; items.forEach(i=>ctx.fillRect(i.x,i.y,i.w,i.h));
+
+    ui.innerHTML = `SCORE: ${score} | HIGH: ${highScore}`;
+
+    drawPlayer();
+
+
+    if(gameState==="start"){ ctx.fillStyle="white"; ctx.font="30px sans-serif"; ctx.textAlign="center";
+        ctx.fillText("無限∞DASHゲーム",canvas.width/2,canvas.height/2-40);
+        ctx.font="20px sans-serif"; ctx.fillText("150%拡大推奨 確率を使用してます",canvas.width/2,canvas.height/2);
+        ctx.fillText("SPACE: Jump",canvas.width/2,canvas.height/2+30);
+        ctx.fillText("Press ENTER to Start",canvas.width/2,canvas.height/2+60);
+    }
+    if(gameState==="over"){ ctx.fillStyle="white"; ctx.font="30px sans-serif"; ctx.textAlign="center";
+        ctx.fillText("GAME OVER",canvas.width/2,canvas.height/2-20);
+        ctx.font="20px sans-serif"; ctx.fillText("Press ENTER to Restart",canvas.width/2,canvas.height/2+20);
+    }
+}
+
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
+loop();
+</script>
+</body>
+</html>
